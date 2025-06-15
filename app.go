@@ -20,6 +20,12 @@ type App struct {
 
 	// server is the underlying HTTP server.
 	server *http.Server
+
+	// mux is the HTTP request multiplexer for routing
+	mux *http.ServeMux
+
+	// middleware holds the global middleware stack
+	middleware []MiddlewareFunc
 }
 
 // Config is a struct holding the server settings.
@@ -54,13 +60,13 @@ type Config struct {
 	ErrorHandler ErrorHandler `json:"-"`
 }
 
-// New creates a new Mux instance.
+// New creates a new Mux application with the given configuration.
+// Zero values in config will be replaced with sensible defaults.
 func New(config Config) *App {
 	// Apply default body size if not explicitly set.
 	if config.BodyLimit == 0 {
 		config.BodyLimit = 4 * 1024 * 1024
 	}
-
 	// Apply default timeouts if unset.
 	if config.ReadTimeout == 0 {
 		config.ReadTimeout = 15 * time.Second
@@ -71,7 +77,6 @@ func New(config Config) *App {
 	if config.IdleTimeout == 0 {
 		config.IdleTimeout = 60 * time.Second
 	}
-
 	// Assign default error handler if none provided.
 	if config.ErrorHandler == nil {
 		config.ErrorHandler = DefaultErrorHandler
@@ -88,13 +93,17 @@ func New(config Config) *App {
 			},
 		},
 
-		// HTTP server is configured but handler will be attached later.
-		server: &http.Server{
-			ReadTimeout:  config.ReadTimeout,
-			WriteTimeout: config.WriteTimeout,
-			IdleTimeout:  config.IdleTimeout,
-			// Handler remains unset; expected to be assigned externally.
-		},
+		// Initialize routing components
+		mux:        http.NewServeMux(),
+		middleware: make([]MiddlewareFunc, 0),
+	}
+
+	// Create HTTP server with the app as the handler
+	app.server = &http.Server{
+		Handler:      app, // Set the app as the handler immediately
+		ReadTimeout:  config.ReadTimeout,
+		WriteTimeout: config.WriteTimeout,
+		IdleTimeout:  config.IdleTimeout,
 	}
 
 	return app
